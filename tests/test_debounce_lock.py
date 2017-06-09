@@ -137,3 +137,40 @@ class TestLock:
 
         assert 1 == tracker.call_count
         assert call('egg', spam='ham') == tracker.call_args
+
+    def test_debounce_with_repeat(self, redis_):
+
+        lock = Lock(redis_)
+
+        tracker = Mock()
+        release = Event()
+
+        @lock.debounce(repeat=True)
+        def func(*args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+        def coroutine():
+            return func('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:func(egg)')
+
+        # simulate locking attempt
+        redis_.incr('lock:func(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:func(egg)')
+
+        assert tracker == thread.wait()
+
+        # must be called twice with the same args
+        assert 2 == tracker.call_count
+        assert (
+            [call('egg', spam='ham'), call('egg', spam='ham')] ==
+            tracker.call_args_list)
