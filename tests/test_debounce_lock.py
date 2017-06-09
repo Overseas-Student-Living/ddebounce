@@ -1,3 +1,5 @@
+import eventlet
+from eventlet.event import Event
 from mock import call, Mock
 import pytest
 
@@ -73,3 +75,34 @@ class TestLock:
 
         # P8 ...
         assert lock.acquire(key) is True
+
+    def test_debounce(self, redis_):
+
+        lock = Lock(redis_)
+
+        tracker = Mock()
+        release = Event()
+
+        @lock.debounce
+        def func(*args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+        def coroutine():
+            return func('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:func(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:func(egg)')
+
+        assert tracker == thread.wait()
+
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
