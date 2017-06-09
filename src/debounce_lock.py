@@ -1,4 +1,8 @@
+from contextlib import contextmanager
+import functools
+
 import redis
+import wrapt
 
 
 class Lock:
@@ -59,3 +63,17 @@ class Lock:
                 return result
 
         return wrapper(wrapped)
+
+
+def debounce(lock, wrapped=None, key=None, repeat=False, callback=None):
+    return Lock(lock).debounce(wrapped, key, repeat, callback)
+
+
+def debouncemethod(lock, wrapped=None, key=None, repeat=False, callback=None):
+
+    @wrapt.decorator
+    def wrapper(wrapped, instance, args, kwargs):
+        decorated = Lock(lock(instance)).debounce(wrapped, key, repeat, callback)
+        return decorated(*args, **kwargs)
+
+    return wrapper
