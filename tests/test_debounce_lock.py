@@ -106,3 +106,34 @@ class TestLock:
 
         assert 1 == tracker.call_count
         assert call('egg', spam='ham') == tracker.call_args
+
+    def test_debounce_with_custom_key(self, redis_):
+
+        lock = Lock(redis_)
+
+        tracker = Mock()
+        release = Event()
+
+        @lock.debounce(key=lambda _, spam: 'yo:{}'.format(spam.upper()))
+        def func(*args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+        def coroutine():
+            return func('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:yo:HAM')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:yo:HAM')
+
+        assert tracker == thread.wait()
+
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
