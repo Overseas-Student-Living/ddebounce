@@ -215,3 +215,40 @@ class TestLock:
         # test callback call
         assert 1 == callback_tracker.call_count
         assert call('egg', spam='ham') == callback_tracker.call_args
+
+    def test_debounce_failing_on_execution(self, redis_):
+
+        lock = Lock(redis_)
+
+        tracker = Mock()
+        release = Event()
+
+        class Whoops(Exception):
+            pass
+
+        tracker.side_effect = Whoops('Yo!')
+
+        @lock.debounce(repeat=True)
+        def func(*args, **kwargs):
+            release.wait()
+            tracker(*args, **kwargs)
+
+        def coroutine():
+            with pytest.raises(Whoops):
+                func('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:func(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:func(egg)')
+
+        thread.wait()
+
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
+
