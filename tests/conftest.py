@@ -1,6 +1,7 @@
 import pytest
 import redis
 
+
 def pytest_addoption(parser):
     parser.addoption(
         '--test-redis-uri',

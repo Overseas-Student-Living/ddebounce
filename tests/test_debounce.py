@@ -4,7 +4,7 @@ from mock import call, Mock
 import operator
 import pytest
 
-from debounce_lock import debounce
+from ddebounce import debounce
 
 
 def test_debounce(redis_):
