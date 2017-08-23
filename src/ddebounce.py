@@ -57,6 +57,21 @@ class Lock:
 
         return wrapper(wrapped)
 
+    def skip_duplicates(self, wrapped=None, key=None):
+
+        if wrapped is None:
+            return functools.partial(self.skip_duplicates, key=key)
+
+        format_key = key or '{0}({{0}})'.format(wrapped.__name__).format
+
+        @wrapt.decorator
+        def wrapper(wrapped, instance, args, kwargs):
+            key = format_key(*args, **kwargs)
+            if self.acquire(key):
+                return wrapped(*args, **kwargs)
+
+        return wrapper(wrapped)
+
 
 def debounce(lock, wrapped=None, key=None, repeat=False, callback=None):
     return Lock(lock).debounce(wrapped, key, repeat, callback)

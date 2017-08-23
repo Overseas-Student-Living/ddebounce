@@ -281,6 +281,52 @@ def test_debounce_failing_on_callback_execution(redis_):
     assert call('egg', spam='ham') == callback_tracker.call_args
 
 
+def test_skip_duplicates_success(redis_):
+
+    lock = Lock(redis_)
+
+    tracker = Mock()
+
+    @lock.skip_duplicates
+    def func(*args, **kwargs):
+        tracker(*args, **kwargs)
+        return tracker
+
+    func('egg', spam='ham')
+
+    assert b'1' == redis_.get('lock:func(egg)')
+
+    func('egg', spam='ham')
+
+    assert b'2' == redis_.get('lock:func(egg)')
+
+    assert 1 == tracker.call_count
+    assert call('egg', spam='ham') == tracker.call_args
+
+
+def test_skip_duplicates_with_custom_key(redis_):
+
+    lock = Lock(redis_)
+
+    tracker = Mock()
+
+    @lock.skip_duplicates(key=lambda _, spam: 'yo:{}'.format(spam.upper()))
+    def func(*args, **kwargs):
+        tracker(*args, **kwargs)
+        return tracker
+
+    func('egg', spam='ham')
+
+    assert b'1' == redis_.get('lock:yo:HAM')
+
+    func('egg', spam='ham')
+
+    assert b'2' == redis_.get('lock:yo:HAM')
+
+    assert 1 == tracker.call_count
+    assert call('egg', spam='ham') == tracker.call_args
+
+
 def test_simple_acquire_and_release(redis_):
 
 	lock = Lock(redis_)
