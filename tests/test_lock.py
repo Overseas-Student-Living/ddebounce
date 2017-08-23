@@ -301,6 +301,48 @@ def test_simple_acquire_and_release(redis_):
 	assert lock.release('wat') is False  # never acquired
 
 
+def test_default_expiration(redis_):
+
+	ttl = 1
+
+	lock = Lock(redis_, ttl)
+
+	key = '101'
+
+	assert lock.acquire(key) is True
+	assert lock.acquire(key) is False
+	# wait for TTL plus 0.1 to avoid hitting it at the point it just
+	# expired but still returns
+	eventlet.sleep(ttl + 0.1)
+	assert lock.acquire(key) is True
+
+
+def test_key_expires_after_release(redis_):
+
+	ttl = 1
+
+	lock = Lock(redis_, ttl)
+
+	key = '101'
+
+	formatted_key = lock.format_key(key)
+
+	assert lock.acquire(key) is True
+
+	assert redis_.ttl(formatted_key) > 0
+
+	lock.release(key)
+
+	# expect a ttl to still be set on the released key
+	assert redis_.ttl(formatted_key) > 0
+
+	# sleep until released key expires
+	eventlet.sleep(ttl + 0.1)
+
+	# ttl = -2 means that the key has gone
+	assert redis_.ttl(formatted_key) == -2
+
+
 def test_complex_scenario(redis_):
 
 	lock = Lock(redis_)

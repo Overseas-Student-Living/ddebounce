@@ -7,9 +7,9 @@ import wrapt
 
 class Lock:
 
-    def __init__(self, client, ttl=None):
+    def __init__(self, client, default_ttl=None):
         self.client = client
-        self.ttl = ttl or 30
+        self.default_ttl = default_ttl or 30
 
     format_key = 'lock:{}'.format
 
@@ -17,12 +17,16 @@ class Lock:
         key = self.format_key(key)
         pipe = self.client.pipeline()
         pipe.incr(key)
-        pipe.expire(key, self.ttl)
+        pipe.expire(key, self.default_ttl)
         count, _ = pipe.execute()
         return count <= 1
 
     def release(self, key):
-        count = self.client.getset(self.format_key(key), 0)
+        key = self.format_key(key)
+        pipe = self.client.pipeline()
+        pipe.getset(key, 0)
+        pipe.expire(key, self.default_ttl)
+        count, _ = pipe.execute()
         count = int(count) if count else 0
         return count > 1
 
