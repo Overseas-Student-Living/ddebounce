@@ -25,8 +25,8 @@ class TestDebounce:
 
         @debounce(redis_)
         def spam(*args, **kwargs):
-            tracker(*args, **kwargs)
             release.wait()
+            tracker(*args, **kwargs)
             return tracker
 
 
@@ -34,8 +34,8 @@ class TestDebounce:
 
             @debounce(redis_)
             def spam(self, *args, **kwargs):
-                tracker(*args, **kwargs)
                 release.wait()
+                tracker(*args, **kwargs)
                 return tracker
 
 
@@ -45,8 +45,8 @@ class TestDebounce:
 
             @debounce(operator.attrgetter('redis'))
             def spam(self, *args, **kwargs):
-                tracker(*args, **kwargs)
                 release.wait()
+                tracker(*args, **kwargs)
                 return tracker
 
 
@@ -78,13 +78,43 @@ class TestDebounce:
         assert 1 == tracker.call_count
         assert call('egg', spam='ham') == tracker.call_args
 
+    def test_debounce_failing_on_execution(
+        self, debounced, redis_, release, tracker
+    ):
+
+        class Whoops(Exception):
+            pass
+
+        tracker.side_effect = Whoops('Yo!')
+
+        def coroutine():
+            with pytest.raises(Whoops):
+                debounced('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:spam(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:spam(egg)')
+
+        thread.wait()
+
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
+
 
 class TestDebounceWithCustomKey:
 
-    @pytest.fixture(params=('func', 'meth', 'meth_alt'))
+    @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
     def debounced(self, request, redis_, release, tracker):
 
-        @debounce(redis_)
+        key = lambda _, spam: 'yo:{}'.format(spam.upper())
+
+        @debounce(redis_, key=key)
         def spam(*args, **kwargs):
             tracker(*args, **kwargs)
             release.wait()
@@ -92,17 +122,17 @@ class TestDebounceWithCustomKey:
 
         class SomeClass:
 
-            @debounce(redis_)
+            @debounce(redis_, key=key)
             def spam(self, *args, **kwargs):
                 tracker(*args, **kwargs)
                 release.wait()
                 return tracker
 
-        class SomeClassAlt:
+        class SpamWithClientOnInstance:
 
             redis = redis_
 
-            @debounce(operator.attrgetter('redis'))
+            @debounce(operator.attrgetter('redis'), key=key)
             def spam(self, *args, **kwargs):
                 tracker(*args, **kwargs)
                 release.wait()
@@ -111,7 +141,65 @@ class TestDebounceWithCustomKey:
         samples = {
             'func': spam,
             'meth': SomeClass().spam,
-            'meth_alt': SomeClassAlt().spam,
+            'meth_using_instance_client': SpamWithClientOnInstance().spam,
+        }
+
+        return samples[request.param]
+
+    def test_debounce(self, debounced, redis_, release, tracker):
+
+        def coroutine():
+            return debounced('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:yo:HAM')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:yo:HAM')
+
+        assert tracker == thread.wait()
+
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
+
+
+class TestDebounceWithRepeat:
+
+    @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
+    def debounced(self, request, redis_, release, tracker):
+
+        @debounce(redis_, repeat=True)
+        def spam(*args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+        class SomeClass:
+
+            @debounce(redis_, repeat=True)
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+        class SpamWithClientOnInstance:
+
+            redis = redis_
+
+            @debounce(operator.attrgetter('redis'), repeat=True)
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+        samples = {
+            'func': spam,
+            'meth': SomeClass().spam,
+            'meth_using_instance_client': SpamWithClientOnInstance().spam,
         }
 
         return samples[request.param]
@@ -126,6 +214,119 @@ class TestDebounceWithCustomKey:
 
         assert b'1' == redis_.get('lock:spam(egg)')
 
+        # simulate locking attempt
+        redis_.incr('lock:spam(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:spam(egg)')
+
+        assert tracker == thread.wait()
+
+        # must be called twice with the same args
+        assert 2 == tracker.call_count
+        assert (
+            [call('egg', spam='ham'), call('egg', spam='ham')] ==
+            tracker.call_args_list)
+
+    def test_debounce_failing_on_repeat_execution(
+        self, debounced, redis_, release, tracker
+    ):
+
+        class Whoops(Exception):
+            pass
+
+        tracker.side_effect = [
+            None,
+            Whoops('Yo!')
+        ]
+
+        def coroutine():
+            with pytest.raises(Whoops):
+                debounced('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:spam(egg)')
+
+        # simulate locking attempt
+        redis_.incr('lock:spam(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:spam(egg)')
+
+        thread.wait()
+
+        # must be called twice with the same args
+        assert 2 == tracker.call_count
+        assert (
+            [call('egg', spam='ham'), call('egg', spam='ham')] ==
+            tracker.call_args_list)
+
+
+class TestDebounceWithCallback:
+
+    @pytest.fixture
+    def callback_tracker(self):
+        return Mock()
+
+    @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
+    def debounced(self, callback_tracker, request, redis_, release, tracker):
+
+        def callback(*args, **kwargs):
+            callback_tracker(*args, **kwargs)
+
+        @debounce(redis_, callback=callback)
+        def spam(*args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+        class SomeClass:
+
+            @debounce(redis_, callback=callback)
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+        class SpamWithClientOnInstance:
+
+            redis = redis_
+
+            @debounce(operator.attrgetter('redis'), callback=callback)
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+        samples = {
+            'func': spam,
+            'meth': SomeClass().spam,
+            'meth_using_instance_client': SpamWithClientOnInstance().spam,
+        }
+
+        return samples[request.param]
+
+    def test_debounce(
+        self, callback_tracker, debounced, redis_, release, tracker
+    ):
+
+        def coroutine():
+            return debounced('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:spam(egg)')
+
+        # simulate locking attempt
+        redis_.incr('lock:spam(egg)')
+
         release.send()
         eventlet.sleep(0.1)
 
@@ -136,625 +337,44 @@ class TestDebounceWithCustomKey:
         assert 1 == tracker.call_count
         assert call('egg', spam='ham') == tracker.call_args
 
+        # test callback call
+        assert 1 == callback_tracker.call_count
+        assert call('egg', spam='ham') == callback_tracker.call_args
 
-def test_debounce_function(redis_):
+    def test_debounce_failing_on_callback_execution(
+        self, callback_tracker, debounced, redis_, release, tracker
+    ):
 
-    tracker = Mock()
-    release = Event()
+        class Whoops(Exception):
+            pass
 
-    @debounce(redis_)
-    def func(*args, **kwargs):
-        tracker(*args, **kwargs)
-        release.wait()
-        return tracker
+        callback_tracker.side_effect = Whoops('Yo!')
 
-    def coroutine():
-        return func('egg', spam='ham')
+        def callback(*args, **kwargs):
+            callback_tracker(*args, **kwargs)
 
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
+        def coroutine():
+            with pytest.raises(Whoops):
+                debounced('egg', spam='ham')
 
-    assert b'1' == redis_.get('lock:func(egg)')
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
 
-    release.send()
-    eventlet.sleep(0.1)
+        assert b'1' == redis_.get('lock:spam(egg)')
 
-    assert b'0' == redis_.get('lock:func(egg)')
+        # simulate locking attempt
+        redis_.incr('lock:spam(egg)')
 
-    assert tracker == thread.wait()
+        release.send()
+        eventlet.sleep(0.1)
 
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+        assert b'0' == redis_.get('lock:spam(egg)')
 
+        thread.wait()
 
-def test_debounce_method(redis_):
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
 
-    tracker = Mock()
-    release = Event()
-
-    class SomeClass:
-
-        @debounce(redis_)
-        def meth(self, *args, **kwargs):
-            tracker(*args, **kwargs)
-            release.wait()
-            return tracker
-
-    def coroutine():
-        return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:meth(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:meth(egg)')
-
-    assert tracker == thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-
-def test_debounce_method_with_(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(operator.attrgetter('redis'))
-        def meth(self, *args, **kwargs):
-            tracker(*args, **kwargs)
-            release.wait()
-            return tracker
-
-    def coroutine():
-        return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:meth(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:meth(egg)')
-
-    assert tracker == thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-
-def test_debounce_function_with_custom_key(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    @debounce(redis_, key=lambda _, spam: 'yo:{}'.format(spam.upper()))
-    def func(*args, **kwargs):
-        tracker(*args, **kwargs)
-        release.wait()
-        return tracker
-
-    def coroutine():
-        return func('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:yo:HAM')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:yo:HAM')
-
-    assert tracker == thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-
-def test_debounce_method_with_custom_key(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(
-            operator.attrgetter('redis'),
-            key=lambda _, spam: 'yo:{}'.format(spam.upper())
-        )
-        def meth(self, *args, **kwargs):
-            tracker(*args, **kwargs)
-            release.wait()
-            return tracker
-
-    def coroutine():
-        return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:yo:HAM')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:yo:HAM')
-
-    assert tracker == thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-
-def test_debounce_method_with_custom_key(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(
-            operator.attrgetter('redis'),
-            key=lambda _, spam: 'yo:{}'.format(spam.upper())
-        )
-        def meth(self, *args, **kwargs):
-            tracker(*args, **kwargs)
-            release.wait()
-            return tracker
-
-    def coroutine():
-        return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:yo:HAM')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:yo:HAM')
-
-    assert tracker == thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-
-def test_debounce_function_with_repeat(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    @debounce(redis_, repeat=True)
-    def func(*args, **kwargs):
-        tracker(*args, **kwargs)
-        release.wait()
-        return tracker
-
-    def coroutine():
-        return func('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:func(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:func(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:func(egg)')
-
-    assert tracker == thread.wait()
-
-    # must be called twice with the same args
-    assert 2 == tracker.call_count
-    assert (
-        [call('egg', spam='ham'), call('egg', spam='ham')] ==
-        tracker.call_args_list)
-
-
-def test_debounce_method_with_repeat(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(operator.attrgetter('redis'), repeat=True)
-        def meth(self, *args, **kwargs):
-            tracker(*args, **kwargs)
-            release.wait()
-            return tracker
-
-    def coroutine():
-        return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:meth(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:meth(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:meth(egg)')
-
-    assert tracker == thread.wait()
-
-    # must be called twice with the same args
-    assert 2 == tracker.call_count
-    assert (
-        [call('egg', spam='ham'), call('egg', spam='ham')] ==
-        tracker.call_args_list)
-
-
-def test_debounce_function_with_callback(redis_):
-
-    tracker, callback_tracker = Mock(), Mock()
-    release = Event()
-
-    def callback(*args, **kwargs):
-        callback_tracker(*args, **kwargs)
-
-    @debounce(redis_, callback=callback)
-    def func(*args, **kwargs):
-        tracker(*args, **kwargs)
-        release.wait()
-        return tracker
-
-    def coroutine():
-        return func('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:func(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:func(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:func(egg)')
-
-    assert tracker == thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-    # test callback call
-    assert 1 == callback_tracker.call_count
-    assert call('egg', spam='ham') == callback_tracker.call_args
-
-
-def test_debounce_method_with_callback(redis_):
-
-    tracker, callback_tracker = Mock(), Mock()
-    release = Event()
-
-    def callback(*args, **kwargs):
-        callback_tracker(*args, **kwargs)
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(operator.attrgetter('redis'), callback=callback)
-        def meth(self, *args, **kwargs):
-            tracker(*args, **kwargs)
-            release.wait()
-            return tracker
-
-    def coroutine():
-        return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:meth(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:meth(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:meth(egg)')
-
-    assert tracker == thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-    # test callback call
-    assert 1 == callback_tracker.call_count
-    assert call('egg', spam='ham') == callback_tracker.call_args
-
-
-def test_debounce_function_failing_on_execution(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class Whoops(Exception):
-        pass
-
-    tracker.side_effect = Whoops('Yo!')
-
-    @debounce(redis_)
-    def func(*args, **kwargs):
-        release.wait()
-        tracker(*args, **kwargs)
-
-    def coroutine():
-        with pytest.raises(Whoops):
-            func('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:func(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:func(egg)')
-
-    thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-
-def test_debounce_method_failing_on_execution(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class Whoops(Exception):
-        pass
-
-    tracker.side_effect = Whoops('Yo!')
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(operator.attrgetter('redis'))
-        def meth(self, *args, **kwargs):
-            release.wait()
-            tracker(*args, **kwargs)
-            return tracker
-
-    def coroutine():
-        with pytest.raises(Whoops):
-            return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:meth(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:meth(egg)')
-
-    thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-
-def test_debounce_function_failing_on_repeat_execution(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class Whoops(Exception):
-        pass
-
-    tracker.side_effect = [
-        None,
-        Whoops('Yo!')
-    ]
-
-    @debounce(redis_, repeat=True)
-    def func(*args, **kwargs):
-        tracker(*args, **kwargs)
-        release.wait()
-
-    def coroutine():
-        with pytest.raises(Whoops):
-            func('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:func(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:func(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:func(egg)')
-
-    thread.wait()
-
-    # must be called twice with the same args
-    assert 2 == tracker.call_count
-    assert (
-        [call('egg', spam='ham'), call('egg', spam='ham')] ==
-        tracker.call_args_list)
-
-
-def test_debounce_method_failing_on_repeat_execution(redis_):
-
-    tracker = Mock()
-    release = Event()
-
-    class Whoops(Exception):
-        pass
-
-    tracker.side_effect = [
-        None,
-        Whoops('Yo!')
-    ]
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(operator.attrgetter('redis'), repeat=True)
-        def meth(self, *args, **kwargs):
-            release.wait()
-            tracker(*args, **kwargs)
-            return tracker
-
-    def coroutine():
-        with pytest.raises(Whoops):
-            return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:meth(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:meth(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:meth(egg)')
-
-    thread.wait()
-
-    # must be called twice with the same args
-    assert 2 == tracker.call_count
-    assert (
-        [call('egg', spam='ham'), call('egg', spam='ham')] ==
-        tracker.call_args_list)
-
-
-def test_debounce_function_failing_on_callback_execution(redis_):
-
-    tracker, callback_tracker = Mock(), Mock()
-    release = Event()
-
-    class Whoops(Exception):
-        pass
-
-    callback_tracker.side_effect = Whoops('Yo!')
-
-    def callback(*args, **kwargs):
-        callback_tracker(*args, **kwargs)
-
-    @debounce(redis_, callback=callback)
-    def func(*args, **kwargs):
-        tracker(*args, **kwargs)
-        release.wait()
-
-    def coroutine():
-        with pytest.raises(Whoops):
-            func('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:func(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:func(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:func(egg)')
-
-    thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-    # test callback call
-    assert 1 == callback_tracker.call_count
-    assert call('egg', spam='ham') == callback_tracker.call_args
-
-
-def test_debounce_method_failing_on_callback_execution(redis_):
-
-    tracker, callback_tracker = Mock(), Mock()
-    release = Event()
-
-    class Whoops(Exception):
-        pass
-
-    callback_tracker.side_effect = Whoops('Yo!')
-
-    def callback(*args, **kwargs):
-        callback_tracker(*args, **kwargs)
-
-    class SomeClass:
-
-        redis = redis_
-
-        @debounce(operator.attrgetter('redis'), callback=callback)
-        def meth(self, *args, **kwargs):
-            release.wait()
-            tracker(*args, **kwargs)
-            return tracker
-
-    def coroutine():
-        with pytest.raises(Whoops):
-            return SomeClass().meth('egg', spam='ham')
-
-    thread = eventlet.spawn(coroutine)
-    eventlet.sleep(0.1)
-
-    assert b'1' == redis_.get('lock:meth(egg)')
-
-    # simulate locking attempt
-    redis_.incr('lock:meth(egg)')
-
-    release.send()
-    eventlet.sleep(0.1)
-
-    assert b'0' == redis_.get('lock:meth(egg)')
-
-    thread.wait()
-
-    assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
-
-    # test callback call
-    assert 1 == callback_tracker.call_count
-    assert call('egg', spam='ham') == callback_tracker.call_args
+        # test callback call
+        assert 1 == callback_tracker.call_count
+        assert call('egg', spam='ham') == callback_tracker.call_args
