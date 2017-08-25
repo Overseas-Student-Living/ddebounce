@@ -22,13 +22,11 @@ class TestDebounce:
     @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
     def debounced(self, request, redis_, release, tracker):
 
-
         @debounce(redis_)
         def spam(*args, **kwargs):
             release.wait()
             tracker(*args, **kwargs)
             return tracker
-
 
         class Spam:
 
@@ -37,7 +35,6 @@ class TestDebounce:
                 release.wait()
                 tracker(*args, **kwargs)
                 return tracker
-
 
         class SpamWithClientOnInstance:
 
@@ -48,7 +45,6 @@ class TestDebounce:
                 release.wait()
                 tracker(*args, **kwargs)
                 return tracker
-
 
         samples = {
             'func': spam,
@@ -112,7 +108,8 @@ class TestDebounceWithCustomKey:
     @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
     def debounced(self, request, redis_, release, tracker):
 
-        key = lambda _, spam: 'yo:{}'.format(spam.upper())
+        def key(_, spam):
+            return 'yo:{}'.format(spam.upper())
 
         @debounce(redis_, key=key)
         def spam(*args, **kwargs):

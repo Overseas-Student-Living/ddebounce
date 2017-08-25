@@ -1,7 +1,6 @@
 import eventlet
 from eventlet.event import Event
 from mock import call, Mock
-import operator
 import pytest
 
 from ddebounce import Lock
@@ -329,111 +328,111 @@ def test_skip_duplicates_with_custom_key(redis_):
 
 def test_simple_acquire_and_release(redis_):
 
-	lock = Lock(redis_)
+    lock = Lock(redis_)
 
-	assert lock.acquire('101') is True
-	assert lock.acquire('101') is False
-	assert lock.acquire('102') is True
-	assert lock.acquire('101') is False
-	assert lock.acquire('102') is False
+    assert lock.acquire('101') is True
+    assert lock.acquire('101') is False
+    assert lock.acquire('102') is True
+    assert lock.acquire('101') is False
+    assert lock.acquire('102') is False
 
-	assert lock.acquire('100') is True
+    assert lock.acquire('100') is True
 
-	assert lock.release('101') is True
-	assert lock.release('102') is True
+    assert lock.release('101') is True
+    assert lock.release('102') is True
 
-	assert lock.release('102') is False
+    assert lock.release('102') is False
 
-	assert lock.release('wat') is False  # never acquired
+    assert lock.release('wat') is False  # never acquired
 
 
 def test_default_expiration(redis_):
 
-	ttl = 1
+    ttl = 1
 
-	lock = Lock(redis_, ttl)
+    lock = Lock(redis_, ttl)
 
-	key = '101'
+    key = '101'
 
-	assert lock.acquire(key) is True
-	assert lock.acquire(key) is False
-	# wait for TTL plus 0.1 to avoid hitting it at the point it just
-	# expired but still returns
-	eventlet.sleep(ttl + 0.1)
-	assert lock.acquire(key) is True
+    assert lock.acquire(key) is True
+    assert lock.acquire(key) is False
+    # wait for TTL plus 0.1 to avoid hitting it at the point it just
+    # expired but still returns
+    eventlet.sleep(ttl + 0.1)
+    assert lock.acquire(key) is True
 
 
 def test_key_expires_after_release(redis_):
 
-	ttl = 1
+    ttl = 1
 
-	lock = Lock(redis_, ttl)
+    lock = Lock(redis_, ttl)
 
-	key = '101'
+    key = '101'
 
-	formatted_key = lock.format_key(key)
+    formatted_key = lock.format_key(key)
 
-	assert lock.acquire(key) is True
+    assert lock.acquire(key) is True
 
-	assert redis_.ttl(formatted_key) > 0
+    assert redis_.ttl(formatted_key) > 0
 
-	lock.release(key)
+    lock.release(key)
 
-	# expect a ttl to still be set on the released key
-	assert redis_.ttl(formatted_key) > 0
+    # expect a ttl to still be set on the released key
+    assert redis_.ttl(formatted_key) > 0
 
-	# sleep until released key expires
-	eventlet.sleep(ttl + 0.1)
+    # sleep until released key expires
+    eventlet.sleep(ttl + 0.1)
 
-	# ttl = -2 means that the key has gone
-	assert redis_.ttl(formatted_key) == -2
+    # ttl = -2 means that the key has gone
+    assert redis_.ttl(formatted_key) == -2
 
 
 def test_complex_scenario(redis_):
 
-	lock = Lock(redis_)
+    lock = Lock(redis_)
 
-	key = '101'
+    key = '101'
 
-	# P1 acquires and starts processing the task
-	assert lock.acquire(key) is True
+    # P1 acquires and starts processing the task
+    assert lock.acquire(key) is True
 
-	# P2 and P3 must not acquire - they should not process the task
-	assert lock.acquire(key) is False
-	assert lock.acquire(key) is False
+    # P2 and P3 must not acquire - they should not process the task
+    assert lock.acquire(key) is False
+    assert lock.acquire(key) is False
 
-	# P1 finishes the task processing and releases the lock
-	# as there were others trying to acquire the same lock during
-	# the time P1 was holding it, P1 will will retry the process
-	# and acquire the lock again
-	should_retry = lock.release(key)
-	assert should_retry is True
-	assert lock.acquire(key) is True
+    # P1 finishes the task processing and releases the lock
+    # as there were others trying to acquire the same lock during
+    # the time P1 was holding it, P1 will will retry the process
+    # and acquire the lock again
+    should_retry = lock.release(key)
+    assert should_retry is True
+    assert lock.acquire(key) is True
 
-	# P4, P5, P6 kick in - all ignoring the task processing
-	assert lock.acquire(key) is False
-	assert lock.acquire(key) is False
-	assert lock.acquire(key) is False
+    # P4, P5, P6 kick in - all ignoring the task processing
+    assert lock.acquire(key) is False
+    assert lock.acquire(key) is False
+    assert lock.acquire(key) is False
 
-	# P1 finishes the task processing and releases the lock
-	# as there were others trying to acquire the same lock during
-	# the time P1 was holding it, P1 will will retry the process
-	# and acquire the lock again
-	should_retry = lock.release(key)
-	assert should_retry is True
-	# BUT P7 kicks in before P1 acquires the lock again
-	assert lock.acquire(key) is True
-	# then P1 will fail acquiring the lock
-	assert lock.acquire(key) is False
+    # P1 finishes the task processing and releases the lock
+    # as there were others trying to acquire the same lock during
+    # the time P1 was holding it, P1 will will retry the process
+    # and acquire the lock again
+    should_retry = lock.release(key)
+    assert should_retry is True
+    # BUT P7 kicks in before P1 acquires the lock again
+    assert lock.acquire(key) is True
+    # then P1 will fail acquiring the lock
+    assert lock.acquire(key) is False
 
-	# P7 finishes and releases, as P1 tried to acquire, P7 will retry
-	should_retry = lock.release(key)
-	assert should_retry is True
-	assert lock.acquire(key) is True
+    # P7 finishes and releases, as P1 tried to acquire, P7 will retry
+    should_retry = lock.release(key)
+    assert should_retry is True
+    assert lock.acquire(key) is True
 
-	# P7 finishes retry and leaves
-	should_retry = lock.release(key)
-	assert should_retry is False
+    # P7 finishes retry and leaves
+    should_retry = lock.release(key)
+    assert should_retry is False
 
-	# P8 ...
-	assert lock.acquire(key) is True
+    # P8 ...
+    assert lock.acquire(key) is True
