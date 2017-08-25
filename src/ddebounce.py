@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import functools
+import operator
 
 import redis
 import wrapt
@@ -77,7 +78,7 @@ def debounce(lock, wrapped=None, key=None, repeat=False, callback=None):
 
     @wrapt.decorator
     def wrapper(wrapped, instance, args, kwargs):
-        if instance:
+        if instance and isinstance(lock, operator.attrgetter):
             decorated = Lock(lock(instance)).debounce(wrapped, key, repeat, callback)
         else:
             decorated = Lock(lock).debounce(wrapped, key, repeat, callback)

@@ -7,6 +7,136 @@ import pytest
 from ddebounce import debounce
 
 
+@pytest.fixture
+def tracker():
+    return Mock()
+
+
+@pytest.fixture
+def release():
+    return Event()
+
+
+class TestDebounce:
+
+    @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
+    def debounced(self, request, redis_, release, tracker):
+
+
+        @debounce(redis_)
+        def spam(*args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+
+        class Spam:
+
+            @debounce(redis_)
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+
+        class SpamWithClientOnInstance:
+
+            redis = redis_
+
+            @debounce(operator.attrgetter('redis'))
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+
+        samples = {
+            'func': spam,
+            'meth': Spam().spam,
+            'meth_using_instance_client': SpamWithClientOnInstance().spam,
+        }
+
+        return samples[request.param]
+
+    def test_debounce(self, debounced, redis_, release, tracker):
+
+        def coroutine():
+            return debounced('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:spam(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:spam(egg)')
+
+        assert tracker == thread.wait()
+
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
+
+
+class TestDebounceWithCustomKey:
+
+    @pytest.fixture(params=('func', 'meth', 'meth_alt'))
+    def debounced(self, request, redis_, release, tracker):
+
+        @debounce(redis_)
+        def spam(*args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+        class SomeClass:
+
+            @debounce(redis_)
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+        class SomeClassAlt:
+
+            redis = redis_
+
+            @debounce(operator.attrgetter('redis'))
+            def spam(self, *args, **kwargs):
+                tracker(*args, **kwargs)
+                release.wait()
+                return tracker
+
+        samples = {
+            'func': spam,
+            'meth': SomeClass().spam,
+            'meth_alt': SomeClassAlt().spam,
+        }
+
+        return samples[request.param]
+
+    def test_debounce(self, debounced, redis_, release, tracker):
+
+        def coroutine():
+            return debounced('egg', spam='ham')
+
+        thread = eventlet.spawn(coroutine)
+        eventlet.sleep(0.1)
+
+        assert b'1' == redis_.get('lock:spam(egg)')
+
+        release.send()
+        eventlet.sleep(0.1)
+
+        assert b'0' == redis_.get('lock:spam(egg)')
+
+        assert tracker == thread.wait()
+
+        assert 1 == tracker.call_count
+        assert call('egg', spam='ham') == tracker.call_args
+
+
 def test_debounce_function(redis_):
 
     tracker = Mock()
@@ -38,6 +168,38 @@ def test_debounce_function(redis_):
 
 
 def test_debounce_method(redis_):
+
+    tracker = Mock()
+    release = Event()
+
+    class SomeClass:
+
+        @debounce(redis_)
+        def meth(self, *args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+    def coroutine():
+        return SomeClass().meth('egg', spam='ham')
+
+    thread = eventlet.spawn(coroutine)
+    eventlet.sleep(0.1)
+
+    assert b'1' == redis_.get('lock:meth(egg)')
+
+    release.send()
+    eventlet.sleep(0.1)
+
+    assert b'0' == redis_.get('lock:meth(egg)')
+
+    assert tracker == thread.wait()
+
+    assert 1 == tracker.call_count
+    assert call('egg', spam='ham') == tracker.call_args
+
+
+def test_debounce_method_with_(redis_):
 
     tracker = Mock()
     release = Event()
@@ -84,6 +246,43 @@ def test_debounce_function_with_custom_key(redis_):
 
     def coroutine():
         return func('egg', spam='ham')
+
+    thread = eventlet.spawn(coroutine)
+    eventlet.sleep(0.1)
+
+    assert b'1' == redis_.get('lock:yo:HAM')
+
+    release.send()
+    eventlet.sleep(0.1)
+
+    assert b'0' == redis_.get('lock:yo:HAM')
+
+    assert tracker == thread.wait()
+
+    assert 1 == tracker.call_count
+    assert call('egg', spam='ham') == tracker.call_args
+
+
+def test_debounce_method_with_custom_key(redis_):
+
+    tracker = Mock()
+    release = Event()
+
+    class SomeClass:
+
+        redis = redis_
+
+        @debounce(
+            operator.attrgetter('redis'),
+            key=lambda _, spam: 'yo:{}'.format(spam.upper())
+        )
+        def meth(self, *args, **kwargs):
+            tracker(*args, **kwargs)
+            release.wait()
+            return tracker
+
+    def coroutine():
+        return SomeClass().meth('egg', spam='ham')
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
