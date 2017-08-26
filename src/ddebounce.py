@@ -1,7 +1,6 @@
-from contextlib import contextmanager
 import functools
+import operator
 
-import redis
 import wrapt
 
 
@@ -57,16 +56,45 @@ class Lock:
 
         return wrapper(wrapped)
 
+    def skip_duplicates(self, wrapped=None, key=None):
+
+        if wrapped is None:
+            return functools.partial(self.skip_duplicates, key=key)
+
+        format_key = key or '{0}({{0}})'.format(wrapped.__name__).format
+
+        @wrapt.decorator
+        def wrapper(wrapped, instance, args, kwargs):
+            key = format_key(*args, **kwargs)
+            if self.acquire(key):
+                return wrapped(*args, **kwargs)
+
+        return wrapper(wrapped)
+
 
 def debounce(lock, wrapped=None, key=None, repeat=False, callback=None):
-    return Lock(lock).debounce(wrapped, key, repeat, callback)
-
-
-def debouncemethod(lock, wrapped=None, key=None, repeat=False, callback=None):
 
     @wrapt.decorator
     def wrapper(wrapped, instance, args, kwargs):
-        decorated = Lock(lock(instance)).debounce(wrapped, key, repeat, callback)
+        if instance and isinstance(lock, operator.attrgetter):
+            decorated = Lock(lock(instance)).debounce(
+                wrapped, key, repeat, callback)
+        else:
+            decorated = Lock(lock).debounce(
+                wrapped, key, repeat, callback)
+        return decorated(*args, **kwargs)
+
+    return wrapper
+
+
+def skip_duplicates(lock, wrapped=None, key=None):
+
+    @wrapt.decorator
+    def wrapper(wrapped, instance, args, kwargs):
+        if instance and isinstance(lock, operator.attrgetter):
+            decorated = Lock(lock(instance)).skip_duplicates(wrapped, key)
+        else:
+            decorated = Lock(lock).skip_duplicates(wrapped, key)
         return decorated(*args, **kwargs)
 
     return wrapper
