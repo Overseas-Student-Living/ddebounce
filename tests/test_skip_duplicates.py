@@ -1,5 +1,3 @@
-import eventlet
-from eventlet.event import Event
 from mock import call, Mock
 import operator
 import pytest

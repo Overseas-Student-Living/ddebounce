@@ -15,8 +15,8 @@ def test_debounce(redis_):
 
     @lock.debounce
     def func(*args, **kwargs):
-        tracker(*args, **kwargs)
         release.wait()
+        tracker(*args, **kwargs)
         return tracker
 
     def coroutine():
@@ -26,6 +26,11 @@ def test_debounce(redis_):
     eventlet.sleep(0.1)
 
     assert b'1' == redis_.get('lock:func(egg)')
+
+    another_thread = eventlet.spawn(coroutine)
+    assert another_thread.wait() is None
+
+    assert tracker.call_count == 0
 
     release.send()
     eventlet.sleep(0.1)
