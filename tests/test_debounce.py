@@ -54,7 +54,9 @@ class TestDebounce:
 
         return samples[request.param]
 
-    def test_debounce(self, debounced, redis_, release, tracker):
+    def test_debounce(
+        self, debounced, debounce_applied, redis_, release, tracker
+    ):
 
         def coroutine():
             return debounced('egg', spam='ham')
@@ -73,6 +75,8 @@ class TestDebounce:
 
         assert 1 == tracker.call_count
         assert call('egg', spam='ham') == tracker.call_args
+
+        assert debounce_applied(debounced)
 
     def test_debounce_failing_on_execution(
         self, debounced, redis_, release, tracker
