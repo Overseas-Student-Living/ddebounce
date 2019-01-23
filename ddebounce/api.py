@@ -5,10 +5,7 @@ import wrapt
 from .lock import Lock
 
 
-def debounce(
-    client, wrapped=None, key=None, repeat=False, callback=None, ttl=None
-):
-
+def debounce(client, wrapped=None, key=None, repeat=False, callback=None, ttl=None):
     @wrapt.decorator
     def wrapper(wrapped, instance, args, kwargs):
         if instance and isinstance(client, operator.attrgetter):
@@ -16,9 +13,7 @@ def debounce(
                 wrapped, key, repeat, callback
             )
         else:
-            decorated = Lock(client, ttl).debounce(
-                wrapped, key, repeat, callback
-            )
+            decorated = Lock(client, ttl).debounce(wrapped, key, repeat, callback)
         return decorated(*args, **kwargs)
 
     def logger(func):
@@ -29,13 +24,10 @@ def debounce(
 
 
 def skip_duplicates(client, wrapped=None, key=None, ttl=None):
-
     @wrapt.decorator
     def wrapper(wrapped, instance, args, kwargs):
         if instance and isinstance(client, operator.attrgetter):
-            decorated = Lock(client(instance), ttl).skip_duplicates(
-                wrapped, key
-            )
+            decorated = Lock(client(instance), ttl).skip_duplicates(wrapped, key)
         else:
             decorated = Lock(client, ttl).skip_duplicates(wrapped, key)
         return decorated(*args, **kwargs)

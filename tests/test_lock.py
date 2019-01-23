@@ -20,12 +20,12 @@ def test_debounce(redis_):
         return tracker
 
     def coroutine():
-        return func('egg', spam='ham')
+        return func("egg", spam="ham")
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
 
-    assert b'1' == redis_.get('lock:func(egg)')
+    assert b"1" == redis_.get("lock:func(egg)")
 
     another_thread = eventlet.spawn(coroutine)
     assert another_thread.wait() is None
@@ -35,12 +35,12 @@ def test_debounce(redis_):
     release.send()
     eventlet.sleep(0.1)
 
-    assert b'0' == redis_.get('lock:func(egg)')
+    assert b"0" == redis_.get("lock:func(egg)")
 
     assert tracker == thread.wait()
 
     assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+    assert call("egg", spam="ham") == tracker.call_args
 
 
 def test_debounce_with_custom_key(redis_):
@@ -50,29 +50,29 @@ def test_debounce_with_custom_key(redis_):
     tracker = Mock()
     release = Event()
 
-    @lock.debounce(key=lambda _, spam: 'yo:{}'.format(spam.upper()))
+    @lock.debounce(key=lambda _, spam: "yo:{}".format(spam.upper()))
     def func(*args, **kwargs):
         tracker(*args, **kwargs)
         release.wait()
         return tracker
 
     def coroutine():
-        return func('egg', spam='ham')
+        return func("egg", spam="ham")
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
 
-    assert b'1' == redis_.get('lock:yo:HAM')
+    assert b"1" == redis_.get("lock:yo:HAM")
 
     release.send()
     eventlet.sleep(0.1)
 
-    assert b'0' == redis_.get('lock:yo:HAM')
+    assert b"0" == redis_.get("lock:yo:HAM")
 
     assert tracker == thread.wait()
 
     assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+    assert call("egg", spam="ham") == tracker.call_args
 
 
 def test_debounce_with_repeat(redis_):
@@ -89,28 +89,26 @@ def test_debounce_with_repeat(redis_):
         return tracker
 
     def coroutine():
-        return func('egg', spam='ham')
+        return func("egg", spam="ham")
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
 
-    assert b'1' == redis_.get('lock:func(egg)')
+    assert b"1" == redis_.get("lock:func(egg)")
 
     # simulate locking attempt
-    redis_.incr('lock:func(egg)')
+    redis_.incr("lock:func(egg)")
 
     release.send()
     eventlet.sleep(0.1)
 
-    assert b'0' == redis_.get('lock:func(egg)')
+    assert b"0" == redis_.get("lock:func(egg)")
 
     assert tracker == thread.wait()
 
     # must be called twice with the same args
     assert 2 == tracker.call_count
-    assert (
-        [call('egg', spam='ham'), call('egg', spam='ham')] ==
-        tracker.call_args_list)
+    assert [call("egg", spam="ham"), call("egg", spam="ham")] == tracker.call_args_list
 
 
 def test_debounce_with_callback(redis_):
@@ -130,29 +128,29 @@ def test_debounce_with_callback(redis_):
         return tracker
 
     def coroutine():
-        return func('egg', spam='ham')
+        return func("egg", spam="ham")
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
 
-    assert b'1' == redis_.get('lock:func(egg)')
+    assert b"1" == redis_.get("lock:func(egg)")
 
     # simulate locking attempt
-    redis_.incr('lock:func(egg)')
+    redis_.incr("lock:func(egg)")
 
     release.send()
     eventlet.sleep(0.1)
 
-    assert b'0' == redis_.get('lock:func(egg)')
+    assert b"0" == redis_.get("lock:func(egg)")
 
     assert tracker == thread.wait()
 
     assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+    assert call("egg", spam="ham") == tracker.call_args
 
     # test callback call
     assert 1 == callback_tracker.call_count
-    assert call('egg', spam='ham') == callback_tracker.call_args
+    assert call("egg", spam="ham") == callback_tracker.call_args
 
 
 def test_debounce_failing_on_execution(redis_):
@@ -165,7 +163,7 @@ def test_debounce_failing_on_execution(redis_):
     class Whoops(Exception):
         pass
 
-    tracker.side_effect = Whoops('Yo!')
+    tracker.side_effect = Whoops("Yo!")
 
     @lock.debounce()
     def func(*args, **kwargs):
@@ -174,22 +172,22 @@ def test_debounce_failing_on_execution(redis_):
 
     def coroutine():
         with pytest.raises(Whoops):
-            func('egg', spam='ham')
+            func("egg", spam="ham")
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
 
-    assert b'1' == redis_.get('lock:func(egg)')
+    assert b"1" == redis_.get("lock:func(egg)")
 
     release.send()
     eventlet.sleep(0.1)
 
-    assert b'0' == redis_.get('lock:func(egg)')
+    assert b"0" == redis_.get("lock:func(egg)")
 
     thread.wait()
 
     assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+    assert call("egg", spam="ham") == tracker.call_args
 
 
 def test_debounce_failing_on_repeat_execution(redis_):
@@ -202,10 +200,7 @@ def test_debounce_failing_on_repeat_execution(redis_):
     class Whoops(Exception):
         pass
 
-    tracker.side_effect = [
-        None,
-        Whoops('Yo!')
-    ]
+    tracker.side_effect = [None, Whoops("Yo!")]
 
     @lock.debounce(repeat=True)
     def func(*args, **kwargs):
@@ -214,28 +209,26 @@ def test_debounce_failing_on_repeat_execution(redis_):
 
     def coroutine():
         with pytest.raises(Whoops):
-            func('egg', spam='ham')
+            func("egg", spam="ham")
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
 
-    assert b'1' == redis_.get('lock:func(egg)')
+    assert b"1" == redis_.get("lock:func(egg)")
 
     # simulate locking attempt
-    redis_.incr('lock:func(egg)')
+    redis_.incr("lock:func(egg)")
 
     release.send()
     eventlet.sleep(0.1)
 
-    assert b'0' == redis_.get('lock:func(egg)')
+    assert b"0" == redis_.get("lock:func(egg)")
 
     thread.wait()
 
     # must be called twice with the same args
     assert 2 == tracker.call_count
-    assert (
-        [call('egg', spam='ham'), call('egg', spam='ham')] ==
-        tracker.call_args_list)
+    assert [call("egg", spam="ham"), call("egg", spam="ham")] == tracker.call_args_list
 
 
 def test_debounce_failing_on_callback_execution(redis_):
@@ -248,7 +241,7 @@ def test_debounce_failing_on_callback_execution(redis_):
     class Whoops(Exception):
         pass
 
-    callback_tracker.side_effect = Whoops('Yo!')
+    callback_tracker.side_effect = Whoops("Yo!")
 
     def callback(*args, **kwargs):
         callback_tracker(*args, **kwargs)
@@ -260,29 +253,29 @@ def test_debounce_failing_on_callback_execution(redis_):
 
     def coroutine():
         with pytest.raises(Whoops):
-            func('egg', spam='ham')
+            func("egg", spam="ham")
 
     thread = eventlet.spawn(coroutine)
     eventlet.sleep(0.1)
 
-    assert b'1' == redis_.get('lock:func(egg)')
+    assert b"1" == redis_.get("lock:func(egg)")
 
     # simulate locking attempt
-    redis_.incr('lock:func(egg)')
+    redis_.incr("lock:func(egg)")
 
     release.send()
     eventlet.sleep(0.1)
 
-    assert b'0' == redis_.get('lock:func(egg)')
+    assert b"0" == redis_.get("lock:func(egg)")
 
     thread.wait()
 
     assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+    assert call("egg", spam="ham") == tracker.call_args
 
     # test callback call
     assert 1 == callback_tracker.call_count
-    assert call('egg', spam='ham') == callback_tracker.call_args
+    assert call("egg", spam="ham") == callback_tracker.call_args
 
 
 def test_skip_duplicates_success(redis_):
@@ -296,16 +289,16 @@ def test_skip_duplicates_success(redis_):
         tracker(*args, **kwargs)
         return tracker
 
-    func('egg', spam='ham')
+    func("egg", spam="ham")
 
-    assert b'1' == redis_.get('lock:func(egg)')
+    assert b"1" == redis_.get("lock:func(egg)")
 
-    func('egg', spam='ham')
+    func("egg", spam="ham")
 
-    assert b'2' == redis_.get('lock:func(egg)')
+    assert b"2" == redis_.get("lock:func(egg)")
 
     assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+    assert call("egg", spam="ham") == tracker.call_args
 
 
 def test_skip_duplicates_with_custom_key(redis_):
@@ -314,41 +307,41 @@ def test_skip_duplicates_with_custom_key(redis_):
 
     tracker = Mock()
 
-    @lock.skip_duplicates(key=lambda _, spam: 'yo:{}'.format(spam.upper()))
+    @lock.skip_duplicates(key=lambda _, spam: "yo:{}".format(spam.upper()))
     def func(*args, **kwargs):
         tracker(*args, **kwargs)
         return tracker
 
-    func('egg', spam='ham')
+    func("egg", spam="ham")
 
-    assert b'1' == redis_.get('lock:yo:HAM')
+    assert b"1" == redis_.get("lock:yo:HAM")
 
-    func('egg', spam='ham')
+    func("egg", spam="ham")
 
-    assert b'2' == redis_.get('lock:yo:HAM')
+    assert b"2" == redis_.get("lock:yo:HAM")
 
     assert 1 == tracker.call_count
-    assert call('egg', spam='ham') == tracker.call_args
+    assert call("egg", spam="ham") == tracker.call_args
 
 
 def test_simple_acquire_and_release(redis_):
 
     lock = Lock(redis_)
 
-    assert lock.acquire('101') is True
-    assert lock.acquire('101') is False
-    assert lock.acquire('102') is True
-    assert lock.acquire('101') is False
-    assert lock.acquire('102') is False
+    assert lock.acquire("101") is True
+    assert lock.acquire("101") is False
+    assert lock.acquire("102") is True
+    assert lock.acquire("101") is False
+    assert lock.acquire("102") is False
 
-    assert lock.acquire('100') is True
+    assert lock.acquire("100") is True
 
-    assert lock.release('101') is True
-    assert lock.release('102') is True
+    assert lock.release("101") is True
+    assert lock.release("102") is True
 
-    assert lock.release('102') is False
+    assert lock.release("102") is False
 
-    assert lock.release('wat') is False  # never acquired
+    assert lock.release("wat") is False  # never acquired
 
 
 def test_default_expiration(redis_):
@@ -357,7 +350,7 @@ def test_default_expiration(redis_):
 
     lock = Lock(redis_, ttl)
 
-    key = '101'
+    key = "101"
 
     assert lock.acquire(key) is True
     assert lock.acquire(key) is False
@@ -373,7 +366,7 @@ def test_key_expires_after_release(redis_):
 
     lock = Lock(redis_, ttl)
 
-    key = '101'
+    key = "101"
 
     formatted_key = lock.format_key(key)
 
@@ -397,7 +390,7 @@ def test_complex_scenario(redis_):
 
     lock = Lock(redis_)
 
-    key = '101'
+    key = "101"
 
     # P1 acquires and starts processing the task
     assert lock.acquire(key) is True

@@ -11,17 +11,14 @@ def tracker():
 
 
 class TestSkipDuplicates:
-
-    @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
+    @pytest.fixture(params=("func", "meth", "meth_using_instance_client"))
     def decorated(self, request, redis_, tracker):
-
         @skip_duplicates(redis_)
         def spam(*args, **kwargs):
             tracker(*args, **kwargs)
             return tracker
 
         class Spam:
-
             @skip_duplicates(redis_)
             def spam(self, *args, **kwargs):
                 tracker(*args, **kwargs)
@@ -31,40 +28,38 @@ class TestSkipDuplicates:
 
             redis = redis_
 
-            @skip_duplicates(operator.attrgetter('redis'))
+            @skip_duplicates(operator.attrgetter("redis"))
             def spam(self, *args, **kwargs):
                 tracker(*args, **kwargs)
                 return tracker
 
         samples = {
-            'func': spam,
-            'meth': Spam().spam,
-            'meth_using_instance_client': SpamWithClientOnInstance().spam,
+            "func": spam,
+            "meth": Spam().spam,
+            "meth_using_instance_client": SpamWithClientOnInstance().spam,
         }
 
         return samples[request.param]
 
     def test_skip_duplicates(self, decorated, redis_, tracker):
 
-        decorated('egg', spam='ham')
+        decorated("egg", spam="ham")
 
-        assert b'1' == redis_.get('lock:spam(egg)')
+        assert b"1" == redis_.get("lock:spam(egg)")
 
-        decorated('egg', spam='ham')
+        decorated("egg", spam="ham")
 
-        assert b'2' == redis_.get('lock:spam(egg)')
+        assert b"2" == redis_.get("lock:spam(egg)")
 
         assert 1 == tracker.call_count
-        assert call('egg', spam='ham') == tracker.call_args
+        assert call("egg", spam="ham") == tracker.call_args
 
 
 class TestSkipDuplicatesWithCustomKey:
-
-    @pytest.fixture(params=('func', 'meth', 'meth_using_instance_client'))
+    @pytest.fixture(params=("func", "meth", "meth_using_instance_client"))
     def decorated(self, request, redis_, tracker):
-
         def key(_, spam):
-            return 'yo:{}'.format(spam.upper())
+            return "yo:{}".format(spam.upper())
 
         @skip_duplicates(redis_, key=key)
         def spam(*args, **kwargs):
@@ -72,7 +67,6 @@ class TestSkipDuplicatesWithCustomKey:
             return tracker
 
         class Spam:
-
             @skip_duplicates(redis_, key=key)
             def spam(self, *args, **kwargs):
                 tracker(*args, **kwargs)
@@ -82,31 +76,31 @@ class TestSkipDuplicatesWithCustomKey:
 
             redis = redis_
 
-            @skip_duplicates(operator.attrgetter('redis'), key=key)
+            @skip_duplicates(operator.attrgetter("redis"), key=key)
             def spam(self, *args, **kwargs):
                 tracker(*args, **kwargs)
                 return tracker
 
         samples = {
-            'func': spam,
-            'meth': Spam().spam,
-            'meth_using_instance_client': SpamWithClientOnInstance().spam,
+            "func": spam,
+            "meth": Spam().spam,
+            "meth_using_instance_client": SpamWithClientOnInstance().spam,
         }
 
         return samples[request.param]
 
     def test_skip_duplicates(self, decorated, redis_, tracker):
 
-        decorated('egg', spam='ham')
+        decorated("egg", spam="ham")
 
-        assert b'1' == redis_.get('lock:yo:HAM')
+        assert b"1" == redis_.get("lock:yo:HAM")
 
-        decorated('egg', spam='ham')
+        decorated("egg", spam="ham")
 
-        assert b'2' == redis_.get('lock:yo:HAM')
+        assert b"2" == redis_.get("lock:yo:HAM")
 
         assert 1 == tracker.call_count
-        assert call('egg', spam='ham') == tracker.call_args
+        assert call("egg", spam="ham") == tracker.call_args
 
 
 @patch("ddebounce.api.Lock")
