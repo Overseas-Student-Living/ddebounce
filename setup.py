@@ -21,6 +21,7 @@ setup(
             "pytest==4.1.1",
         ],
     },
+    entry_points={'pytest11': ['ddebounce=ddebounce.pytest']},
     dependency_links=[],
     zip_safe=True,
     license='Apache License, Version 2.0',
