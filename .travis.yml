@@ -1,0 +1,36 @@
+language: python
+
+python:
+  - '3.4'
+  - '3.5'
+  - '3.6'
+  - nightly
+
+matrix:
+  allow_failures:
+    - python: nightly
+
+services:
+  - redis-server
+
+install:
+  - pip install -U pip setuptools
+  - pip install -U -e ".[dev]"
+
+script:
+  - make test
+
+deploy:
+
+  - provider: pypi
+
+    on:
+      tags: true
+      repo: Overseas-Student-Living/ddebounce
+      condition: $TRAVIS_PYTHON_VERSION = "3.5"
+
+    distributions: sdist bdist_wheel
+
+    user: iky
+    password:
+      secure: daXlSd4bxnpSFT0mcbMWMOLgTV6lKrfwTeaA9SCoKtqlUFAxQ2xKBej30qLx6TBWm2G7yILESRSeRoClsqTfO13Vx8pXU6Xf8Ei9F2RyZZ0WNZV5uxGxfMA8RDhLURDyoyhSWQIDXaAGeWAQhmMZsAWwzIhd6ozjWjmT4z0KU9zxLCzRUrE8+GOUyT+PhG6xA0AlSUlrKueAr0TAUnwLAaLiHaklkFlFqSnZzjdOtOdULnfskckU0zPLlXLOLJ1OHyZLQdkUCBlYkLhBb8Qr4+tHuCrDQaOMA2uJtbi/WK52UpMHZQeM3JhU7XVgKcliLhkSnO5n8HP5J6C0DXgQQAVhapsEHMTB32+GpLm7v/9VkqEr4mPWyxXB5VXdwp0aIdDujS9y/ONzhJGO43bhNNpQxr1Q/QqiURE8deltvTUfQp1Z8jxhJnEWMqq1i3XmAg9N+khjWOf05B31ag2IvoQ8emDRVbJCQRMpIDPa6qQ54dtX9yjUGDGK6EzLAXSu3/XWjuYllj9TlbOCEosgMxLVAYCFthbc1KFMYap0ZA0b9+VEaILYtiLelRLLpyzbEAvQFMpT0CGOE6xPo9Hql/EPd6D1YfOX9FOJPOpD1yRxQgagZ34QG3pVrImw0I3zjmnlrOI+NReKBRBPdL2w73uEyIP0glaD1yv0nSXWfxg=
