@@ -58,7 +58,7 @@ def test_skip_duplicates_applied(skip_duplicates_applied, redis_):
         pass
 
     assert skip_duplicates_applied(spam)
-    assert skip_duplicates_applied(spam, key=None, repeat=False, callback=None)
+    assert skip_duplicates_applied(spam, key=None)
 
 
 def test_skip_duplicates_applied_with_exact_attributes(
