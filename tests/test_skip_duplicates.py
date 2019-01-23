@@ -1,4 +1,4 @@
-from mock import call, Mock
+from mock import call, patch, Mock
 import operator
 import pytest
 
@@ -107,3 +107,17 @@ class TestSkipDuplicatesWithCustomKey:
 
         assert 1 == tracker.call_count
         assert call('egg', spam='ham') == tracker.call_args
+
+
+@patch("ddebounce.api.Lock")
+def test_custom_ttl(Lock):
+
+    redis_ = Mock()
+
+    @skip_duplicates(redis_, ttl=60)
+    def spam():
+        pass
+
+    spam()
+
+    assert Lock.call_args == call(redis_, 60)

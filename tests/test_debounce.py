@@ -1,6 +1,6 @@
 import eventlet
 from eventlet.event import Event
-from mock import call, Mock
+from mock import call, Mock, patch
 import operator
 import pytest
 
@@ -379,3 +379,17 @@ class TestDebounceWithCallback:
         # test callback call
         assert 1 == callback_tracker.call_count
         assert call('egg', spam='ham') == callback_tracker.call_args
+
+
+@patch("ddebounce.api.Lock")
+def test_custom_ttl(Lock):
+
+    redis_ = Mock()
+
+    @debounce(redis_, ttl=60)
+    def spam():
+        pass
+
+    spam()
+
+    assert Lock.call_args == call(redis_, 60)
