@@ -6,8 +6,7 @@ setup(
     version='0.1.0-rc0',
     author='Student.com',
     url='http://github.com/iky/ddebounce',
-    package_dir={'': 'src'},
-    packages=[''],
+    packages=['ddebounce'],
     install_requires=[
         "redis>=2.10.5",
         'wrapt>=1.10.8',
