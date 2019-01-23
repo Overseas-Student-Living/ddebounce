@@ -24,13 +24,12 @@ def test_debounce_applied(debounce_applied, redis_):
         pass
 
     assert debounce_applied(spam)
-    assert debounce_applied(spam, key=None, repeat=False, callback=None)
-    assert debounce_applied(spam, repeat=False)
 
 
 def test_debounce_applied_with_exact_attributes(debounce_applied, redis_):
 
-    key, callback = Mock(), Mock()
+    key, another_key = Mock(), Mock()
+    callback = Mock()
 
     @debounce(redis_, key=key, repeat=True, callback=callback, ttl=60)
     def spam():
@@ -44,6 +43,10 @@ def test_debounce_applied_with_exact_attributes(debounce_applied, redis_):
 
     assert debounce_applied(
         spam, key=key, repeat=True, callback=callback, ttl=60
+    )
+
+    assert not debounce_applied(
+        spam, key=another_key, repeat=True, callback=callback, ttl=60
     )
 
 
@@ -62,7 +65,6 @@ def test_skip_duplicates_applied(skip_duplicates_applied, redis_):
         pass
 
     assert skip_duplicates_applied(spam)
-    assert skip_duplicates_applied(spam, key=None)
 
 
 def test_skip_duplicates_applied_with_exact_attributes(
