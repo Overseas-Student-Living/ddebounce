@@ -26,7 +26,7 @@ deploy:
 
     on:
       tags: true
-      repo: Overseas-Student-Living/ddebounce
+      repo: iky/ddebounce
       condition: $TRAVIS_PYTHON_VERSION = "3.5"
 
     distributions: sdist bdist_wheel
